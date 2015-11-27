@@ -1031,8 +1031,8 @@ static GtsSegment * connection (GtsPoint * p,
       GtsVertex * v2 = s->v1 == next->v1 || s->v1 == next->v2 ? s->v1 : s->v2;
 
       if (is_inside_wedge (s, next, p, o) &&
-	  !segment_intersects (p, GTS_POINT (v2), interior, o))
-	return s;
+          !segment_intersects (p, GTS_POINT (v2), interior, o))
+        return s;
       s = next;
     } while (s != start);
     bloops = bloops->next;
@@ -1075,7 +1075,11 @@ static void connect_interior_loop (GtsSegment * start,
   do {
     if (!(c = connection (GTS_POINT (s->v2), *interior, *bloops, o)))
       s = NEXT (s);
-  } while (s != start && !c);
+  } while (s != NULL && s != start && !c);
+  if (s == NULL || c == NULL)
+  {
+    return;
+  }
   g_assert (c);
   next = NEXT (c);
   v = c->v1 == next->v1 || c->v1 == next->v2 ? c->v1 : c->v2;
@@ -1319,7 +1323,7 @@ static gboolean new_ear (GtsSegment * s,
   if (or <= 0.)
     fprintf (stderr, "or: %g\n", or);
 #endif /* DEBUG */
-  g_assert (or > -1e-6);
+  //g_assert (or > -1e-6);
   return TRUE;
 }
 
@@ -1348,6 +1352,11 @@ static void triangulate_loop (GtsSegment * start,
 #ifdef DEBUG
 	fprintf (stderr, "sloppy: %u\n", sloppy);
 #endif /* DEBUG */
+        // It has been tried too many times
+        if (sloppy > 3)
+        {
+          break;
+        }
       }
       prev = s;
       s = next;
@@ -1436,8 +1445,10 @@ static void check_boundary_interior_triangulation (GSList * boundary,
 static void merge_duplicate (GtsEdge * e)
 {
   GtsEdge * dup = gts_edge_is_duplicate (e);
-
-  g_assert (dup);
+  if (dup == NULL)
+  {
+    return;
+  }
   gts_edge_replace (dup, e);
   gts_object_destroy (GTS_OBJECT (dup));
 }
