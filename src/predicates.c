@@ -119,7 +119,7 @@
 #include "predicates.h"
 
 /* Use header file generated automatically by predicates_init. */
-#define USE_PREDICATES_INIT
+//#define USE_PREDICATES_INIT
 
 #ifdef USE_PREDICATES_INIT
 #include "predicates_init.h"
