@@ -892,37 +892,42 @@ static GSList * interior_loops (GSList * interior)
     if (IS_SET (s, RELEVANT)) {
       GtsSegment * start = s, * end;
 
+      // Remove RELEVANT on all segments connected to s.
       do {
-	GtsSegment * next = next_flag (s, INTERIOR);
+        GtsSegment * next = next_flag (s, INTERIOR);
 
-	UNSET (s, RELEVANT);
-	end = s; 
-	s = NEXT (s) = next;
+        UNSET (s, RELEVANT);
+        end = s;
+        s = NEXT (s) = next;
       } while (s != NULL && s != start);
 
       if (s == start)
-	loops = g_slist_prepend (loops, start);
+        // The list is a loop, prepend
+        loops = g_slist_prepend (loops, start);
       else {
-	GtsSegment * next, * prev;
-	gboolean isloop;
+        // It is not a loop
+        GtsSegment * next, * prev;
+        gboolean isloop;
 
-	s = prev_flag (start, INTERIOR);
-	while (s) {
-	  UNSET (s, RELEVANT);
-	  NEXT (s) = start;
-	  start = s;
-	  s = prev_flag (s, INTERIOR);
-	}
-	next = next_flag (end, RELEVANT);
-	prev = prev_flag (start, RELEVANT);
-	if (prev != NULL)
-	  SET (start->v1, INTERIOR);
-	if (next != NULL)
-	  SET (end->v2, INTERIOR);
-	if (next == NULL && prev == NULL)
-	  loops = g_slist_prepend (loops, start);
-	else
-	  reverse (start, TRUE, &isloop);
+        // Remove RELEVANT on all segments connected to s.
+        GtsSegment * startOrig = start;
+        s = prev_flag (start, INTERIOR);
+        while (s != NULL && s != startOrig) { // JF: s != startOrig
+          UNSET (s, RELEVANT);
+          NEXT (s) = start;
+          start = s;
+          s = prev_flag (s, INTERIOR);
+        }
+        next = next_flag (end, RELEVANT);
+        prev = prev_flag (start, RELEVANT);
+        if (prev != NULL)
+          SET (start->v1, INTERIOR);
+        if (next != NULL)
+          SET (end->v2, INTERIOR);
+        if (next == NULL && prev == NULL)
+          loops = g_slist_prepend (loops, start);
+        else
+          reverse (start, TRUE, &isloop);
       }
     }
     i = i->next;
