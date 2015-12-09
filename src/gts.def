@@ -32,6 +32,7 @@ EXPORTS
     gts_point_triangle_closest
     gts_point_triangle_distance
     gts_point_triangle_distance2
+    gts_predicates_init
     gts_segment_triangle_intersection
     gts_allow_floating_vertices
     gts_color_vertex_class
