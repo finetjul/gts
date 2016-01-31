@@ -121,8 +121,8 @@ void gts_triangle_set (GtsTriangle * triangle,
     g_return_if_fail (gts_segment_connect (GTS_SEGMENT (e3), 
 					   GTS_SEGMENT (e1)->v2, 
 					   GTS_SEGMENT (e2)->v1));
-  else
-    g_assert_not_reached ();
+  //else
+  //  g_assert_not_reached ();
 
   e1->triangles = g_slist_prepend (e1->triangles, triangle);
   e2->triangles = g_slist_prepend (e2->triangles, triangle);

@@ -549,13 +549,22 @@ GSList * gts_surface_intersection (GtsSurface * s1,
 
 typedef enum {
   INTERIOR = 1 << (GTS_USER_FLAG),
-  RELEVANT = 1 << (GTS_USER_FLAG + 1)
+  RELEVANT = 1 << (GTS_USER_FLAG + 1),
+  PROCESSED = 2 << (GTS_USER_FLAG + 2)
 } CurveFlag;
 
 #define IS_SET(s, f) ((GTS_OBJECT_FLAGS (s) & (f)) != 0)
 #define SET(s, f)   (GTS_OBJECT_FLAGS (s) |= (f))
 #define UNSET(s, f) (GTS_OBJECT_FLAGS (s) &= ~(f))
 #define NEXT(s)  (GTS_OBJECT (s)->reserved)
+
+void set(GtsSegment* s, CurveFlag flag, gboolean value)
+{
+  if (value)
+    SET(s, flag);
+  else
+    UNSET(s, flag);
+}
 
 #ifdef DEBUG
 static void print_segment (GtsSegment * s)
@@ -850,12 +859,20 @@ static GtsSegment * reverse (GtsSegment * start,
   GtsSegment * s = start, * prev = NULL, * rprev = NULL;
   GtsSegment * rstart = NULL, * rstart1 = NULL;
 
+  gboolean processed = !IS_SET(start, PROCESSED);
+  gboolean islocalloop = FALSE;
+  *isloop = FALSE;
   do {
     GtsSegment * rs;
 
-    g_assert (IS_EDGE_INTER (s));
+    //g_assert (IS_EDGE_INTER (s));
+    if (!IS_EDGE_INTER(s)){
+      break;
+    }
+
     rs = GTS_SEGMENT (edge_inter_new (s->v2, s->v1,
-				      EDGE_INTER (s)->t1, EDGE_INTER (s)->t2));
+                                      EDGE_INTER (s)->t1, EDGE_INTER (s)->t2));
+    set(s, PROCESSED, processed);
 
     if (rstart == NULL)
       rstart = rs;
@@ -866,20 +883,29 @@ static GtsSegment * reverse (GtsSegment * start,
     NEXT (rs) = rprev;
     rprev = rs;
     prev = s;
-    s = NEXT (s);
-  } while (s != NULL && s != start);
-  if (s == start) {
+    s = NEXT(s);
+    if (s == NULL)
+      break;
+    if (s == start){
+      *isloop = TRUE;
+      break;
+    }
+    if (IS_SET(s, PROCESSED) == processed){
+      islocalloop = TRUE;
+      break;
+    }
+  } while (TRUE);
+  if (*isloop) {
     NEXT (rstart) = rprev;
-    *isloop = TRUE;
   }
   else {
     NEXT (rstart) = start;
     NEXT (prev) = rprev;
-    *isloop = FALSE;
   }    
   return rstart1;
 }
 
+// For each segments in the list, detect all connected loops.
 static GSList * interior_loops (GSList * interior)
 {
   GSList * i = interior;
@@ -891,38 +917,78 @@ static GSList * interior_loops (GSList * interior)
 
     if (IS_SET (s, RELEVANT)) {
       GtsSegment * start = s, * end;
+      gboolean isloop = FALSE;
+      gboolean haslocalloop = FALSE;
 
-      do {
-	GtsSegment * next = next_flag (s, INTERIOR);
+      gboolean processed = !IS_SET(s, PROCESSED);
+      // TODO: improve support of local loops
+      while (TRUE){
+        UNSET(s, RELEVANT);
+        set(s, PROCESSED, processed);
+        end = s;
 
-	UNSET (s, RELEVANT);
-	end = s; 
-	s = NEXT (s) = next;
-      } while (s != NULL && s != start);
+        GtsSegment * next = next_flag (s, INTERIOR);
 
-      if (s == start)
-	loops = g_slist_prepend (loops, start);
+        s = NEXT(s) = next;
+
+        if (s == NULL)
+          break;
+        if (s == start || s->v2 == start->v2){
+          isloop = TRUE;
+          break;
+        }
+        if (IS_SET(s, PROCESSED) == processed){
+          // a local loop does not include start
+          haslocalloop = TRUE;
+          break;
+        }
+      }
+
+      if (isloop) {
+        loops = g_slist_prepend(loops, start);
+      }
       else {
-	GtsSegment * next, * prev;
-	gboolean isloop;
+        GtsSegment * next, * prev;
+        gboolean isloop = FALSE;
 
-	s = prev_flag (start, INTERIOR);
-	while (s) {
-	  UNSET (s, RELEVANT);
-	  NEXT (s) = start;
-	  start = s;
-	  s = prev_flag (s, INTERIOR);
-	}
-	next = next_flag (end, RELEVANT);
-	prev = prev_flag (start, RELEVANT);
-	if (prev != NULL)
-	  SET (start->v1, INTERIOR);
-	if (next != NULL)
-	  SET (end->v2, INTERIOR);
-	if (next == NULL && prev == NULL)
-	  loops = g_slist_prepend (loops, start);
-	else
-	  reverse (start, TRUE, &isloop);
+        s = prev_flag (start, INTERIOR);
+        while (s != NULL){
+          UNSET (s, RELEVANT);
+          set(s, PROCESSED, processed);
+          NEXT (s) = start;
+          start = s;
+          s = prev_flag (s, INTERIOR);
+          
+          if (s == NULL)
+            break;
+          // maybe there is still a loop (if a local loop was found)
+          if ((s == end) || (s->v2 == end->v2)){
+            isloop = TRUE;
+            break;
+          }
+          // a local loop does not include start
+          if (IS_SET(s, PROCESSED) == processed){
+            haslocalloop = TRUE;
+            break;
+          }
+        }
+        if (isloop) {
+          loops = g_slist_prepend(loops, start);
+        }
+        else
+        {
+          // Check if the segment is connected to another relevant segment
+          next = next_flag(end, RELEVANT);
+          prev = prev_flag(start, RELEVANT);
+          if (prev != NULL)
+            SET(start->v1, INTERIOR);
+          if (next != NULL)
+            SET(end->v2, INTERIOR);
+          if (next == NULL && prev == NULL)
+            loops = g_slist_prepend(loops, start);
+          else
+            reverse(start, TRUE, &isloop);
+        }
       }
     }
     i = i->next;
@@ -1124,7 +1190,7 @@ static GSList * boundary_loops (GSList * boundary)
     GtsSegment * next = inext ? inext->data : start;
     GtsVertex * v = s->v1 == next->v1 || s->v1 == next->v2 ? s->v1 : s->v2;
 
-    if (IS_SET (v, INTERIOR)) {
+    if (v != NULL && IS_SET (v, INTERIOR)) {
       GtsSegment * intprev = prev_interior (v);
 
       NEXT (intprev) = next;
@@ -1142,12 +1208,20 @@ static GSList * boundary_loops (GSList * boundary)
     
     if (IS_SET (start, RELEVANT)) {
       GtsSegment * s = start;
-
-      do {
-	UNSET (s, RELEVANT);
-	UNSET (s, INTERIOR);
-	s = NEXT (s);
-      } while (s != start);
+      gboolean processed = !IS_SET(s, PROCESSED);
+      while (TRUE){
+        UNSET(s, RELEVANT);
+        UNSET(s, INTERIOR);
+        set(s, PROCESSED, processed);
+        UNSET(s, INTERIOR);
+        s = NEXT(s);
+        if (s == NULL)
+          break;
+        if (s == start)
+          break;
+        if (IS_SET(s, PROCESSED) == processed)
+          break;
+      }
       loops = g_slist_prepend (loops, start);
     }
     i = i->next;
@@ -1225,8 +1299,9 @@ static GtsSegment * triangle_intersects_segments (GtsPoint * p1,
 						  GtsPoint * o)
 {
   GtsSegment * s = start;
+  gboolean processed = !IS_SET(s, PROCESSED);
 
-  do {
+  while (TRUE) {
     GtsPoint * p4 = GTS_POINT (s->v1);
     GtsPoint * p5 = GTS_POINT (s->v2);
 
@@ -1258,8 +1333,15 @@ static GtsSegment * triangle_intersects_segments (GtsPoint * p1,
 	     segment_intersects1 (p2, p3, p4, p5, closed, o) ||
 	     segment_intersects1 (p3, p1, p4, p5, closed, o))
       return s;
+    set(s, PROCESSED, processed);
     s = NEXT (s);
-  } while (s != start);
+    if (s == NULL)
+      break;
+    if (s == start)
+      break;
+    if (IS_SET(s, PROCESSED) == processed)
+      break;
+  };
   return NULL;
 }
 
@@ -1282,7 +1364,7 @@ static gboolean new_ear (GtsSegment * s,
   if (e->v3 == e->v1)
     return FALSE;
   e->s3 = NEXT (e->s2);
-  if (gts_segment_connect (e->s3, e->v1, e->v3)) {
+  if (e->s3 != NULL && gts_segment_connect(e->s3, e->v1, e->v3)) {
     if (NEXT (e->s3) != e->s1)
       return FALSE;
   }
@@ -1337,9 +1419,14 @@ static void triangulate_loop (GtsSegment * start,
   guint nt = 0;
 #endif /* DEBUG */
 
+  gboolean processed = !IS_SET(start, PROCESSED);
   s = NEXT (start);
-  while (NEXT (s) != s) {
+  while (s != NULL && NEXT (s) != s) {
+    set(s, PROCESSED, processed);
     GtsSegment * next = NEXT (s);
+    if (next != NULL && IS_SET(s, PROCESSED) == processed){
+      break;
+    }
     Ear e;
 
 #ifdef DEBUG
@@ -1400,9 +1487,11 @@ static void triangulate_loop (GtsSegment * start,
 #endif /* DEBUG */
     }
   }
-  UNSET (s, RELEVANT);
-  UNSET (s, INTERIOR);
-  NEXT (s) = NULL;
+  if (s != NULL){
+    UNSET(s, RELEVANT);
+    UNSET(s, INTERIOR);
+    NEXT(s) = NULL;
+  }
 }
 
 static void check_object (GtsObject * o)
