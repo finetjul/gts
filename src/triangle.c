@@ -122,7 +122,7 @@ void gts_triangle_set (GtsTriangle * triangle,
 					   GTS_SEGMENT (e1)->v2, 
 					   GTS_SEGMENT (e2)->v1));
   else
-    g_assert_not_reached ();
+    return; //finetjul: g_assert_not_reached ();
 
   e1->triangles = g_slist_prepend (e1->triangles, triangle);
   e2->triangles = g_slist_prepend (e2->triangles, triangle);

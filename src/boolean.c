@@ -454,8 +454,8 @@ static void intersect_edges (GtsBBox * bb1, GtsBBox * bb2,
     }
   }
 
-  g_assert ((!vi1 && !vi2) || (vi1 && vi2));
-  if (vi1) {
+  //finetjul:  g_assert ((!vi1 && !vi2) || (vi1 && vi2));
+  if (vi1 && vi2) {//finetjul: if (vi1) {
     GtsEdge * e = GTS_EDGE (edge_inter_new (vi1, vi2, t1, t2));
 
 #ifdef DEBUG
@@ -1338,7 +1338,7 @@ static void triangulate_loop (GtsSegment * start,
 #endif /* DEBUG */
 
   s = NEXT (start);
-  while (NEXT (s) != s) {
+  while (s != NULL && NEXT(s) != s) {//finetjul: while (NEXT (s) != s) {
     GtsSegment * next = NEXT (s);
     Ear e;
 
@@ -1400,9 +1400,12 @@ static void triangulate_loop (GtsSegment * start,
 #endif /* DEBUG */
     }
   }
-  UNSET (s, RELEVANT);
-  UNSET (s, INTERIOR);
-  NEXT (s) = NULL;
+  if (s != NULL)//finetjul
+  {
+    UNSET (s, RELEVANT);
+    UNSET (s, INTERIOR);
+    NEXT (s) = NULL;
+  }
 }
 
 static void check_object (GtsObject * o)
