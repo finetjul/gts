@@ -552,7 +552,7 @@ typedef enum {
   RELEVANT = 1 << (GTS_USER_FLAG + 1)
 } CurveFlag;
 
-#define IS_SET(s, f) ((GTS_OBJECT_FLAGS (s) & (f)) != 0)
+#define IS_SET(s, f) ((GTS_OBJECT_FLAGS (s) & (f)) == f)
 #define SET(s, f)   (GTS_OBJECT_FLAGS (s) |= (f))
 #define UNSET(s, f) (GTS_OBJECT_FLAGS (s) &= ~(f))
 #define NEXT(s)  (GTS_OBJECT (s)->reserved)
@@ -893,36 +893,36 @@ static GSList * interior_loops (GSList * interior)
       GtsSegment * start = s, * end;
 
       do {
-	GtsSegment * next = next_flag (s, INTERIOR);
+        GtsSegment * next = next_flag(s, INTERIOR | RELEVANT); // finetjul, was: next_flag(s, INTERIOR);
 
-	UNSET (s, RELEVANT);
-	end = s; 
-	s = NEXT (s) = next;
+        UNSET (s, RELEVANT);
+        end = s;
+        s = NEXT (s) = next;
       } while (s != NULL && s != start);
 
       if (s == start)
-	loops = g_slist_prepend (loops, start);
+        loops = g_slist_prepend (loops, start);
       else {
-	GtsSegment * next, * prev;
-	gboolean isloop;
+        GtsSegment * next, * prev;
+        gboolean isloop;
 
-	s = prev_flag (start, INTERIOR);
-	while (s) {
-	  UNSET (s, RELEVANT);
-	  NEXT (s) = start;
-	  start = s;
-	  s = prev_flag (s, INTERIOR);
-	}
-	next = next_flag (end, RELEVANT);
-	prev = prev_flag (start, RELEVANT);
-	if (prev != NULL)
-	  SET (start->v1, INTERIOR);
-	if (next != NULL)
-	  SET (end->v2, INTERIOR);
-	if (next == NULL && prev == NULL)
-	  loops = g_slist_prepend (loops, start);
-	else
-	  reverse (start, TRUE, &isloop);
+        s = prev_flag (start, INTERIOR);
+        while (s) {
+          UNSET (s, RELEVANT);
+          NEXT (s) = start;
+          start = s;
+          s = prev_flag(s, INTERIOR | RELEVANT);// finetjul, was: next_flag(s, INTERIOR);
+        }
+        next = next_flag (end, RELEVANT);
+        prev = prev_flag (start, RELEVANT);
+        if (prev != NULL)
+          SET (start->v1, INTERIOR);
+        if (next != NULL)
+          SET (end->v2, INTERIOR);
+        if (next == NULL && prev == NULL)
+          loops = g_slist_prepend (loops, start);
+        else
+          reverse (start, TRUE, &isloop);
       }
     }
     i = i->next;
