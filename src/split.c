@@ -74,10 +74,9 @@ struct _CFaceClass {
 					    }\
                                           }
 
-#define HEAP_INSERT_OBJECT(h, e) (GTS_OBJECT (e)->reserved =\
-				  gts_eheap_insert (h, e))
-#define HEAP_REMOVE_OBJECT(h, e) (gts_eheap_remove (h, GTS_OBJECT (e)->reserved),\
-				   GTS_OBJECT (e)->reserved = NULL)
+#define HEAP_INSERT_EDGE(h, e) (SET_HEAP(e, gts_eheap_insert (h, e)))
+#define HEAP_REMOVE_EDGE(h, e) (gts_eheap_remove (h, GET_HEAP(e)),\
+  SET_HEAP(e, NULL))
 
 static GtsObjectClass * cface_class (void)
 {
@@ -153,7 +152,7 @@ static GtsTriangle * replace_edge_collapse (GtsEdge * e,
   *a = NULL;
   if (!e->triangles) {
     if (heap)
-      HEAP_REMOVE_OBJECT (heap, e);
+      HEAP_REMOVE_EDGE (heap, e);
     gts_object_destroy (GTS_OBJECT (e));
   }
 #else /* not NEW */
@@ -182,7 +181,7 @@ static GtsTriangle * replace_edge_collapse (GtsEdge * e,
   *a = NULL;
 #endif
   if (heap)
-    HEAP_REMOVE_OBJECT (heap, e);
+    HEAP_REMOVE_EDGE (heap, e);
   e->triangles = NULL;
   gts_object_destroy (GTS_OBJECT (e));
 #endif /* NEW */
@@ -693,6 +692,7 @@ void gts_split_collapse (GtsSplit * vs,
   if (end) {
     end->next = v->segments;
     v->segments = v1->segments;
+    fprintf(stdout, "gts_split_collapse %p", v->segments);
     v1->segments = NULL;
   }
 
@@ -710,6 +710,7 @@ void gts_split_collapse (GtsSplit * vs,
   if (end) {
     end->next = v->segments;
     v->segments = v2->segments;
+    fprintf(stdout, "gts_split_collapse 2 %p", v->segments);
     v2->segments = NULL;
   }
 
@@ -848,8 +849,10 @@ void gts_split_expand (GtsSplit * vs,
 	GTS_SEGMENT (e1)->v2 = with;
 
       v->segments = g_slist_remove_link (v->segments, i);
+      fprintf(stdout, "gts_split_expand %p", v->segments);
       i->next = with->segments;
       with->segments = i;
+      fprintf(stdout, "gts_split_expand 2 %p", with->segments);
       changed = TRUE;
     }
     if (next)
@@ -1201,7 +1204,7 @@ void gts_hsplit_force_expand (GtsHSplit * hs,
   if (hs->parent && hs->parent->nchild == 0) {
 #ifdef DEBUG_HEXPAND
     expand_indent (stderr); 
-    fprintf (stderr, "expand parent %p\n", hs->parent);
+    fprintf (stdout, "expand parent %p\n", hs->parent);
 #endif
     gts_hsplit_force_expand (hs->parent, hsurface);
   }
@@ -1216,7 +1219,7 @@ void gts_hsplit_force_expand (GtsHSplit * hs,
       if (IS_CFACE (t)) {
 #ifdef DEBUG_HEXPAND
 	expand_indent (stderr); 
-	fprintf (stderr, "expand a1: cf->f: %p t: %p parent_split: %p\n", 
+	fprintf (stdout, "expand a1: cf->f: %p t: %p parent_split: %p\n", 
 		 cf->f,
 		 t,
 		 GTS_HSPLIT (CFACE (t)->parent_split));
@@ -1232,7 +1235,7 @@ void gts_hsplit_force_expand (GtsHSplit * hs,
       if (IS_CFACE (t)) {
 #ifdef DEBUG_HEXPAND
 	expand_indent (stderr); 
-	fprintf (stderr, "expand a2: cf->f: %p t: %p parent_split: %p\n", 
+	fprintf (stdout, "expand a2: cf->f: %p t: %p parent_split: %p\n", 
 		 cf->f,
 		 t,
 		 GTS_HSPLIT (CFACE (t)->parent_split));
@@ -1248,7 +1251,7 @@ void gts_hsplit_force_expand (GtsHSplit * hs,
 #ifdef DEBUG_HEXPAND
   expand_level -= 2; 
   expand_indent (stderr); 
-  fprintf (stderr, "%p expanded\n", hs);
+  fprintf (stdout, "%p expanded\n", hs);
 #endif
 }
 

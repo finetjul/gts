@@ -546,10 +546,11 @@ GtsSegmentClass * gts_segment_class                  (void);
 GtsSegment *  gts_segment_new                        (GtsSegmentClass * klass,
 						      GtsVertex * v1, 
 						      GtsVertex * v2);
-#define       gts_segment_connect(s, e1, e2)         (((s)->v1 == e1 &&\
-                                                       (s)->v2 == e2) || \
-                                                      ((s)->v1 == e2 &&\
-                                                       (s)->v2 == e1))
+#define       gts_segment_connect(s, e1, e2)         (((s) != NULL) &&\
+                                                      (((s)->v1 == e1 &&\
+                                                        (s)->v2 == e2) || \
+                                                       ((s)->v1 == e2 &&\
+                                                        (s)->v2 == e1)))
 #define       gts_segments_are_identical(s1, s2)     (((s1)->v1 == (s2)->v1 &&\
 						       (s1)->v2 == (s2)->v2)\
 						      ||\
@@ -577,6 +578,7 @@ gboolean      gts_segment_is_ok                      (GtsSegment * s);
 #define GTS_EDGE_CLASS(klass)    GTS_OBJECT_CLASS_CAST (klass,\
 							GtsEdgeClass,\
 							gts_edge_class ())
+
 
 struct _GtsEdge {
   GtsSegment segment;
@@ -660,6 +662,7 @@ GtsTriangle * gts_triangle_new               (GtsTriangleClass * klass,
 					      GtsEdge * e1, 
 					      GtsEdge * e2,
 					      GtsEdge * e3);
+// Returns the end point of e2 NOT on e1
 #define     gts_triangle_vertex(t) (GTS_SEGMENT (GTS_TRIANGLE (t)->e1)->v1 ==\
                                     GTS_SEGMENT (GTS_TRIANGLE (t)->e2)->v1 || \
                                     GTS_SEGMENT (GTS_TRIANGLE (t)->e1)->v2 ==\
@@ -2553,6 +2556,30 @@ GtsGraphBisection * gts_graph_bisection_new        (GtsWGraph * wg,
 						    gfloat imbalance);
 void                gts_graph_bisection_destroy    (GtsGraphBisection * bg,
 						    gboolean destroy_graphs);
+
+void SET_VERTICES(GtsSegment* segment, GList* vertices);
+void SET_EDGE_VERTICES(GtsEdge* edge, GList* vertices);
+GList* GET_VERTICES(GtsSegment* segment);
+GList* GET_EDGE_VERTICES(GtsEdge* edge);
+
+void SET_SUBEDGES(GtsSegment* segment, GList* subEdges);
+GList* GET_SUBEDGES(GtsSegment* segment);
+
+void SET_NEXTEDGE(GtsSegment* segment, GtsSegment* next);
+GtsSegment* GET_NEXTEDGE(GtsSegment* segment);
+
+void SET_SURFACEINTER(GtsSegment* segment, GtsSurfaceInter* surface);
+GtsSurfaceInter* GET_SURFACEINTER(GtsSegment* segment);
+
+void SET_HEAP(GtsEdge* segment, GtsEHeapPair * heap);
+GtsEHeapPair * GET_HEAP(GtsEdge* segment);
+
+void SET_COPY(GtsEdge* segment, GtsEdge* copy);
+GtsEdge* GET_COPY(GtsEdge* segment);
+
+void SET_BORDEREDGES(GtsEdge* segment, GSList* borderEdges);
+GSList* GET_BORDEREDGES(GtsEdge* segment);
+
 
 #ifdef __cplusplus
 }

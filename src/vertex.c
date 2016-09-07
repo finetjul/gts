@@ -130,7 +130,10 @@ void gts_vertex_replace (GtsVertex * v, GtsVertex * with)
   while (i) {
     GtsSegment * s = i->data;
     if (s->v1 != with && s->v2 != with)
+    {
       with->segments = g_slist_prepend (with->segments, s);
+      fprintf(stdout, "gts_vertex_replace 2 %p", with->segments);
+    }
     if (s->v1 == v) s->v1 = with;
     if (s->v2 == v) s->v2 = with;
     i = i->next;
@@ -584,7 +587,9 @@ static GtsEdge * replace_vertex (GtsTriangle * t,
     if (s->v1 == v) s->v1 = with;
     if (s->v2 == v) s->v2 = with;
     with->segments = g_slist_prepend (with->segments, s);
-    v->segments = g_slist_remove (v->segments, s);
+    fprintf(stdout, "replace_vertex %p", with->segments);
+    v->segments = g_slist_remove(v->segments, s);
+    fprintf(stdout, "replace_vertex 2 %p", v->segments);
   }
 
   return e;

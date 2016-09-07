@@ -21,10 +21,10 @@
 #include <math.h>
 #include "gts.h"
 
-#define HEAP_INSERT_OBJECT(h, e) (GTS_OBJECT (e)->reserved =\
-                                   gts_eheap_insert (h, e))
-#define HEAP_REMOVE_OBJECT(h, e) (gts_eheap_remove (h, GTS_OBJECT (e)->reserved),\
-				  GTS_OBJECT (e)->reserved = NULL)
+#define HEAP_INSERT_EDGE(h, e) (SET_HEAP(e, gts_eheap_insert (h, e)))
+#define HEAP_REMOVE_EDGE(h, e) (gts_eheap_remove (h, GET_HEAP(e)),\
+  SET_HEAP(e, NULL))
+
 
 static void psurface_destroy (GtsObject * object)
 {
@@ -102,16 +102,14 @@ static GtsVertex * edge_collapse (GtsPSurface * ps,
   if (!gts_edge_collapse_is_valid (e) ||
       /* check that a non-manifold edge is not a contact edge */
       (g_slist_length (e->triangles) > 2 && gts_edge_is_contact (e) > 1)) {
-    GTS_OBJECT (e)->reserved = 
-      gts_eheap_insert_with_key (heap, e, G_MAXDOUBLE);
+    SET_HEAP(e, gts_eheap_insert_with_key (heap, e, G_MAXDOUBLE));
     return NULL;
   }
 
   mid = (*coarsen_func) (e, ps->s->vertex_class, coarsen_data);
 
   if (gts_edge_collapse_creates_fold (e, mid, maxcosine2)) {
-    GTS_OBJECT (e)->reserved = 
-      gts_eheap_insert_with_key (heap, e, G_MAXDOUBLE);
+    SET_HEAP(e, gts_eheap_insert_with_key (heap, e, G_MAXDOUBLE));
     gts_object_destroy (GTS_OBJECT (mid));
     return NULL;
   }
@@ -155,9 +153,9 @@ static void update_2nd_closest_neighbors (GtsVertex * v, GtsEHeap * heap)
   i = list;
   while (i) {
     GtsEdge * e = i->data;
-    if (GTS_OBJECT (e)->reserved)
-      HEAP_REMOVE_OBJECT (heap, e);
-    HEAP_INSERT_OBJECT (heap, e);
+    if (GET_HEAP(e))
+      HEAP_REMOVE_EDGE (heap, e);
+    HEAP_INSERT_EDGE (heap, e);
     i = i->next;
   }
 
@@ -172,7 +170,7 @@ static gdouble edge_length2 (GtsEdge * e)
 
 static void create_heap_coarsen (GtsEdge * e, GtsEHeap * heap)
 {
-  HEAP_INSERT_OBJECT (heap, e);
+  HEAP_INSERT_EDGE(heap, e);
 }
 
 /* #define DEBUG_FOLD */
@@ -310,7 +308,7 @@ GtsPSurface * gts_psurface_new (GtsPSurfaceClass * klass,
   gts_allow_floating_edges = FALSE;
 
   /* set reserved field of remaining edges back to NULL */
-  if (e) GTS_OBJECT (e)->reserved = NULL;
+  if (e) SET_HEAP(e, NULL);
   gts_eheap_foreach (heap, (GFunc) gts_object_reset_reserved, NULL);
 
   gts_eheap_destroy (heap);

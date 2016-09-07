@@ -28,6 +28,7 @@
 #  include "gts-private.h"
 #endif /* DEBUG */
 
+
 static void surface_inter_destroy (GtsObject * object)
 {
   GtsSurfaceInter * si = GTS_SURFACE_INTER (object);
@@ -132,6 +133,163 @@ static EdgeInter * edge_inter_new (GtsVertex * v1, GtsVertex * v2,
   return object;
 }
 
+
+typedef enum {
+  INTERIOR = 1 << (GTS_USER_FLAG),
+  RELEVANT = 1 << (GTS_USER_FLAG + 1),
+
+  VERTICES = 1 << (GTS_USER_FLAG + 2),
+  SUBEDGES = 1 << (GTS_USER_FLAG + 3),
+  NEXTEDGE = 1 << (GTS_USER_FLAG + 4),
+  SURFACEINTER = 1 << (GTS_USER_FLAG + 5),
+  HEAP = 1 << (GTS_USER_FLAG + 6),
+  COPY = 1 << (GTS_USER_FLAG + 7),
+  BORDEREDGES = 1 << (GTS_USER_FLAG + 8)
+} CurveFlag;
+
+#define IS_SET(s, f) ((GTS_OBJECT_FLAGS (s) & (f)) != 0)
+#define SET(s, f)   (GTS_OBJECT_FLAGS (s) |= (f))
+#define UNSET(s, f) (GTS_OBJECT_FLAGS (s) &= ~(f))
+
+
+void RESET(GtsSegment* segment){
+  UNSET(segment, VERTICES);
+  UNSET(segment, SUBEDGES);
+  UNSET(segment, NEXTEDGE);
+  UNSET(segment, SURFACEINTER);
+  UNSET(segment, HEAP);
+  UNSET(segment, COPY);
+  UNSET(segment, BORDEREDGES);
+  GTS_OBJECT(segment)->reserved = NULL;
+}
+
+void RESET_EDGE(GtsEdge* edge){
+  RESET(GTS_SEGMENT(edge));
+}
+
+void SET_RESERVED(GtsSegment* segment, void* value, CurveFlag flag){
+  RESET(segment);
+  SET(segment, flag);
+  GTS_OBJECT(segment)->reserved = value;
+  fprintf(stderr,
+    "segment: %p, value:%p, flag:%u\n", segment, value, flag);
+}
+
+void SET_VERTICES(GtsSegment* segment, GList* vertices){
+  SET_RESERVED(segment, vertices, VERTICES);
+}
+
+void SET_EDGE_VERTICES(GtsEdge* edge, GList* vertices){
+  SET_VERTICES(GTS_SEGMENT(edge), vertices);
+}
+
+GList* GET_VERTICES(GtsSegment* segment){
+  GList* res = GTS_OBJECT(segment)->reserved;
+  if (!IS_SET(segment, VERTICES))
+  {
+    return NULL;
+  }
+  g_assert(res == NULL || IS_SET(segment, VERTICES));
+  g_assert(res == NULL || !IS_EDGE_INTER(segment));
+  return res;
+}
+
+GList* GET_EDGE_VERTICES(GtsEdge* edge){
+  return GET_VERTICES(GTS_SEGMENT(edge));
+}
+
+void SET_SUBEDGES(GtsSegment* segment, GList* subEdges){
+  SET_RESERVED(segment, subEdges, SUBEDGES);
+}
+
+GList* GET_SUBEDGES(GtsSegment* segment){
+  GList* res = GTS_OBJECT(segment)->reserved;
+  // Special case for add_boundary
+  if (!IS_SET(segment, SUBEDGES))
+  {
+    return NULL;
+  }
+  g_assert(res == NULL || IS_SET(segment, SUBEDGES));
+  g_assert(res == NULL || !IS_EDGE_INTER(segment));
+  return res;
+}
+
+void SET_NEXTEDGE(GtsSegment* segment, GtsSegment* next){
+  g_assert(next == NULL|| GTS_EDGE(next));
+  SET_RESERVED(segment, next, NEXTEDGE);
+}
+
+GtsSegment* GET_NEXTEDGE(GtsSegment* segment){
+  if (!IS_SET(segment, NEXTEDGE))
+    return NULL;
+  GtsSegment* res = GTS_OBJECT(segment)->reserved;
+  g_assert(res == NULL || IS_SET(segment, NEXTEDGE));
+  return res;
+}
+
+void SET_SURFACEINTER(GtsSegment* segment, GtsSurfaceInter* surface){
+  SET_RESERVED(segment, surface, SURFACEINTER);
+}
+
+GtsSurfaceInter* GET_SURFACEINTER(GtsSegment* segment){
+  GtsSurfaceInter* res = GTS_OBJECT(segment)->reserved;
+  g_assert(res == NULL || IS_SET(segment, SURFACEINTER));
+  return res;
+}
+
+void SET_HEAP(GtsEdge* edge, GtsEHeapPair* heap){
+  SET_RESERVED(GTS_SEGMENT(edge), heap, HEAP);
+}
+
+GtsEHeapPair* GET_HEAP(GtsEdge* segment){
+  GtsEHeapPair* res = GTS_OBJECT(segment)->reserved;
+  g_assert(res == NULL || IS_SET(segment, HEAP));
+  return res;
+}
+
+void SET_COPY(GtsEdge* edge, GtsEdge* copy){
+  SET_RESERVED(GTS_SEGMENT(edge), copy, COPY);
+}
+
+GtsEdge* GET_COPY(GtsEdge* segment){
+  GtsEdge* res = GTS_OBJECT(segment)->reserved;
+  g_assert(res == NULL || IS_SET(segment, COPY));
+  return res;
+}
+
+void SET_BORDEREDGES(GtsEdge* edge, GSList* borderededges){
+  SET_RESERVED(GTS_SEGMENT(edge), borderededges, BORDEREDGES);
+}
+
+GSList* GET_BORDEREDGES(GtsEdge* segment){
+  GSList* res = GTS_OBJECT(segment)->reserved;
+  g_assert(res == NULL || IS_SET(segment, BORDEREDGES));
+  return res;
+}
+
+
+static void free_edge_list(GtsObject * o)
+{
+  GtsSegment* s = GTS_SEGMENT(o);
+  GList* list = GET_VERTICES(s);
+  if (list)
+    g_list_free(list);
+  list = GET_SUBEDGES(s);
+  if (list)
+    g_list_free(list);
+  RESET(s);
+}
+
+#ifndef NDEBUG
+void** NEXT(GtsSegment* s){
+  g_assert(IS_EDGE_INTER(s));
+  return GTS_OBJECT(s)->reserved;
+}
+#else
+  #define NEXT(s)  (GTS_OBJECT (s)->reserved)
+#endif
+
+
 #ifdef DEBUG
 static void write_surface_graph (GtsSurface * s, FILE * fp)
 {
@@ -181,6 +339,7 @@ static GtsPoint * segment_triangle_intersection (GtsSegment * s,
     tmpp = E; E = D; D = tmpp;
     tmp = ABCE; ABCE = ABCD; ABCD = tmp;
   }
+  // Segment is totally above or under the triangle. No intersection
   if (ABCE < 0 || ABCD > 0)
     return NULL;
   ADCE = gts_point_orientation_3d_sos (A, D, C, E);
@@ -266,13 +425,14 @@ static void add_edge_inter (GtsEdge * e,
 			    GtsTriangle * t,
 			    GtsVertex * v)
 {
+  g_assert(!IS_EDGE_INTER(e));
   GtsVertex * ev1 = GTS_SEGMENT (e)->v1;
   GtsVertex * ev2 = GTS_SEGMENT (e)->v2;
-  GList * i = GTS_OBJECT (e)->reserved;
+  GList * i = GET_EDGE_VERTICES(e);
 
   GTS_OBJECT (v)->reserved = t;
   if (i == NULL) {
-    GTS_OBJECT (e)->reserved = g_list_prepend (NULL, v);
+    SET_EDGE_VERTICES( e, g_list_prepend (NULL, v));
 #ifdef DEBUG
     fprintf (stderr, "add_edge_inter: inserting %p (%p,%p)\n", v, e, t);
 #endif /* DEBUG */
@@ -284,7 +444,9 @@ static void add_edge_inter (GtsEdge * e,
     gint oref = gts_point_orientation_3d_sos(p1, p2, p3, GTS_POINT(ev1));
     gint o1 = oref;
     while (i) {
-      gint o2 = triangle_point_orientation (t, GTS_OBJECT (i->data)->reserved,
+      GtsVertex * vertex = i->data;
+      GtsTriangle* vertexTriangle = GTS_OBJECT(vertex)->reserved;
+      gint o2 = triangle_point_orientation(t, vertexTriangle,
 					    oref, GTS_POINT (ev1));
 
       if (o2 == 0) {
@@ -308,20 +470,21 @@ static void add_edge_inter (GtsEdge * e,
       n->prev = i->prev;
       i->prev = n;
       if (n->prev == NULL)
-        GTS_OBJECT (e)->reserved = n;
+        SET_EDGE_VERTICES(e, n);
       else
         n->prev->next = n;
     }
     else {
       g_assert (o1*gts_point_orientation_3d_sos (p1, p2, p3, GTS_POINT (ev2))
 		< 0);
-      GTS_OBJECT (e)->reserved = g_list_append (GTS_OBJECT (e)->reserved, v);
+      GList* listWithV = g_list_append (GET_EDGE_VERTICES(e), v);
+      SET_EDGE_VERTICES(e, listWithV);
     }
 #ifdef DEBUG
     fprintf (stderr, 
 	     "add_edge_inter: inserting %p (%p,%p) between %p and %p\n", 
 	     v, e, t, ev1, ev2);
-    i = GTS_OBJECT (e)->reserved;
+    i = GET_EDGE_VERTICES(e);
     while (i) {
       fprintf (stderr, " %p", i->data);
       i = i->next;
@@ -336,12 +499,12 @@ static GtsVertex * intersects (GtsEdge * e,
 			       GtsTriangle * t,
 			       GtsSurface * s)
 {
-  GList * i = GTS_OBJECT (e)->reserved;
+  GList * i = GET_EDGE_VERTICES(e);
   GtsVertex * v;
 
   // Scan all vertices of edge to see if one does not yet belong to t
   while (i) {
-    GtsVertex * vertex = GTS_OBJECT(i->data);
+    GtsVertex * vertex = GTS_VERTEX(i->data);
     if (GTS_OBJECT(vertex)->reserved == t)
       return i->data;
     i = i->next;
@@ -549,16 +712,6 @@ GSList * gts_surface_intersection (GtsSurface * s1,
 
   return inter;  
 }
-
-typedef enum {
-  INTERIOR = 1 << (GTS_USER_FLAG),
-  RELEVANT = 1 << (GTS_USER_FLAG + 1)
-} CurveFlag;
-
-#define IS_SET(s, f) ((GTS_OBJECT_FLAGS (s) & (f)) != 0)
-#define SET(s, f)   (GTS_OBJECT_FLAGS (s) |= (f))
-#define UNSET(s, f) (GTS_OBJECT_FLAGS (s) &= ~(f))
-#define NEXT(s)  (GTS_OBJECT (s)->reserved)
 
 #ifdef DEBUG
 static void print_segment (GtsSegment * s)
@@ -799,17 +952,20 @@ static GtsSegment * prev_flag (GtsSegment * s, CurveFlag flag, GtsVertex** p)
   GSList * i = NULL;
   // Always use v1, except if we come from v1
   if (*p == s->v2) // && *p != NULL
-    i = s->v2->segments;
+    i = NULL;//s->v2->segments;
   else
     i = s->v1->segments;
 
   while (i) {
     if (i->data != s && IS_SET(i->data, flag)){
       GtsSegment* previousS = i->data;
+      /*
       if (previousS->v1 == *p) // && *p != NULL
         *p = previousS->v2;
       else
         *p = previousS->v1;
+      */
+      *p = previousS->v1;
       return previousS;
     }
     i = i->next;
@@ -822,17 +978,20 @@ static GtsSegment * next_flag(GtsSegment * s, CurveFlag flag, GtsVertex** p)
   GSList * i = NULL;
   // Always use v2, except if we come from v2
   if (*p == s->v1) // && *p != NULL
-    i = s->v1->segments;
+    i = NULL;//s->v1->segments;
   else
     i = s->v2->segments;
 
   while (i) {
     if (i->data != s && IS_SET(i->data, flag)){
       GtsSegment* nextS = i->data;
+      /*
       if (nextS->v2 == *p) // && *p != NULL
         *p = nextS->v1;
       else
         *p = nextS->v2;
+        */
+      *p = nextS->v2;
       return nextS;
     }
     i = i->next;
@@ -876,11 +1035,9 @@ static GtsSegment * reverse (GtsSegment * start,
   GtsSegment * rstart = NULL, * rstart1 = NULL;
 
   do {
-    GtsSegment * rs;
-
-    g_assert (IS_EDGE_INTER (s));
-    rs = GTS_SEGMENT (edge_inter_new (s->v2, s->v1,
-				      EDGE_INTER (s)->t1, EDGE_INTER (s)->t2));
+    g_assert(IS_EDGE_INTER(s));
+    GtsSegment * rs = GTS_SEGMENT (edge_inter_new (s->v2, s->v1,
+      EDGE_INTER(s)->t1, EDGE_INTER(s)->t2));
 
     if (rstart == NULL)
       rstart = rs;
@@ -888,18 +1045,18 @@ static GtsSegment * reverse (GtsSegment * start,
       rstart1 = rs;
     if (interior)
       SET (rs, INTERIOR);
-    NEXT (rs) = rprev;
+    SET_NEXTEDGE(rs, rprev);
     rprev = rs;
     prev = s;
-    s = NEXT (s);
+    s = GET_NEXTEDGE(s);
   } while (s != NULL && s != start);
   if (s == start) {
-    NEXT (rstart) = rprev;
+    SET_NEXTEDGE(rstart, rprev);
     *isloop = TRUE;
   }
   else {
-    NEXT (rstart) = start;
-    NEXT (prev) = rprev;
+    SET_NEXTEDGE(rstart, start);
+    SET_NEXTEDGE(prev, rprev);
     *isloop = FALSE;
   }    
   return rstart1;
@@ -917,31 +1074,45 @@ static GSList * interior_loops (GSList * interior)
   i = interior;
   while (i) {
     GtsSegment * s = i->data;
+    g_assert(IS_EDGE_INTER(s));
 
     if (IS_SET (s, RELEVANT)) {
-      GtsSegment * start = s, * end;
+      GtsSegment * start = s;
+      GtsSegment * end;
       GtsVertex* endPoint = NULL;
       do {
         GtsSegment * next = next_flag(s, INTERIOR, &endPoint);
-
+        if (next && !IS_SET(next, RELEVANT))
+          break;
+        // s belongs to the loop, do not process it as a new loop
         UNSET (s, RELEVANT);
         end = s;
-        s = NEXT (s) = next;
+        g_assert(next == NULL || IS_EDGE_INTER(next));
+        //g_assert(next == NULL || GET_NEXTEDGE(s) == NULL);
+        SET_NEXTEDGE(s, next);
+        s = next;
       } while (s != NULL && s != start);
 
       if (s == start)
         loops = g_slist_prepend (loops, start);
       else {
-        GtsSegment * next, * prev;
+        GtsSegment * next;
+        GtsSegment * prev;
         gboolean isloop;
 
         GtsVertex* startPoint = NULL;
         s = prev_flag(start, INTERIOR, &startPoint);
         while (s) {
+          // g_assert(NEXT(s) == NULL); Something unknown can be found in reserved
+          // Segment has already be processed, stop the search
+          if (!IS_SET(s, RELEVANT))
+            break;
           UNSET (s, RELEVANT);
-          NEXT (s) = start;
+          SET_NEXTEDGE(s, start);
           start = s;
           s = prev_flag(s, INTERIOR, &startPoint);
+          g_assert(s == NULL || IS_EDGE_INTER(s));
+          
         }
         prev = prev_flag(start, RELEVANT, &startPoint);
         if (prev != NULL)
@@ -1054,10 +1225,15 @@ static GtsSegment * connection (GtsPoint * p,
 				GtsPoint * o)
 {
   while (bloops) {
-    GtsSegment * start = bloops->data, * s = start;
+    GtsSegment * start = bloops->data;
+    GtsSegment * s = start;
 
     do {
-      GtsSegment * next = NEXT (s);
+      GtsSegment * next = GET_NEXTEDGE (s);
+      if (next == NULL)
+      {
+        break;
+      }
       GtsVertex * v2 = s->v1 == next->v1 || s->v1 == next->v2 ? s->v1 : s->v2;
 
       if (is_inside_wedge (s, next, p, o) &&
@@ -1077,7 +1253,7 @@ static gdouble loop_orientation (GtsSegment * start,
   gdouble or = 0.;
 
   do {
-    GtsSegment * next = NEXT (s);
+    GtsSegment * next = GET_NEXTEDGE (s);
     GtsVertex * v1, * v2;
 
     ORIENTED_VERTICES (s, next, v1, v2);
@@ -1104,14 +1280,14 @@ static void connect_interior_loop (GtsSegment * start,
 
   do {
     if (!(c = connection (GTS_POINT (s->v2), *interior, *bloops, o)))
-      s = NEXT (s);
+      s = GET_NEXTEDGE (s);
   } while (s != NULL && s != start && !c);
   if (s == NULL || c == NULL)
   {
     return;
   }
   g_assert (c);
-  next = NEXT (c);
+  next = GET_NEXTEDGE (c);
   v = c->v1 == next->v1 || c->v1 == next->v2 ? c->v1 : c->v2;
   cv = s->v2;
 #ifdef DEBUG
@@ -1135,38 +1311,51 @@ static void connect_interior_loop (GtsSegment * start,
   }
   s1 = GTS_SEGMENT (gts_edge_new (surface->edge_class, v, cv));
   rs1 = GTS_SEGMENT (gts_edge_new (surface->edge_class, cv, v));
-  NEXT (c) = s1;
-  NEXT (rs1) = next;
+  SET_NEXTEDGE(c, s1);
+  SET_NEXTEDGE(rs1, next);
   *interior = g_slist_prepend (*interior, s1);
-  NEXT (s1) = NEXT (s);
-  NEXT (s) = rs1;
+  SET_NEXTEDGE(s1, GET_NEXTEDGE(s));
+  SET_NEXTEDGE(s, rs1);
 }
 
-static GSList * boundary_loops (GSList * boundary)
+static GSList * boundary_loops(GSList * boundary)
 {
   GSList * i = boundary;  
   GtsSegment * start = i->data;
   GSList * loops = NULL;
 
+  // Repurpose edge reserved value to be a NEXT edge
   while (i) {
     GtsSegment * s = i->data;
     GSList * inext = i->next;
     GtsSegment * next = inext ? inext->data : start;
-    GtsVertex * v = s->v1 == next->v1 || s->v1 == next->v2 ? s->v1 : s->v2;
-
-    if (IS_SET (v, INTERIOR)) {
-      GtsSegment * intprev = prev_interior(v);
-
-      if (intprev != NULL)
-        NEXT (intprev) = next;
-      NEXT (s) = next_interior (v);
-      UNSET (v, INTERIOR);
+    // Get v, the vertex in common with next
+    GtsVertex * v = s->v1 == next->v1 || s->v1 == next->v2 ? s->v1 : s->v2 ;
+    //g_assert(NEXT(s) == NULL);
+    if (v != NULL) {
+      if (IS_SET (v, INTERIOR)) {
+        GtsSegment * intprev = prev_interior(v);
+        g_assert(intprev != s);
+        if (intprev != NULL)
+          SET_NEXTEDGE (intprev, next);
+        next = next_interior (v);
+        UNSET (v, INTERIOR);
+      }
     }
     else
-      NEXT (s) = next;
+    {
+      next = NULL;
+    }
+    //free_edge_list(GTS_OBJECT(s));
+    g_assert(next != s);
+    SET_NEXTEDGE(s, next);
+    if (next != NULL)
+      IS_SET(next, RELEVANT);
     i = inext;
   }
+  // From now on, all boundary edges have a NEXT.
 
+  // Add to loops only the first boundary edge
   i = boundary;
   while (i) {
     start = i->data;
@@ -1177,7 +1366,7 @@ static GSList * boundary_loops (GSList * boundary)
       do {
         UNSET (s, RELEVANT);
         UNSET (s, INTERIOR);
-        s = NEXT (s);
+        s = GET_NEXTEDGE(s);
       } while (s != NULL && s != start);
       loops = g_slist_prepend (loops, start);
     }
@@ -1289,12 +1478,12 @@ static GtsSegment * triangle_intersects_segments (GtsPoint * p1,
 	     segment_intersects1 (p2, p3, p4, p5, closed, o) ||
 	     segment_intersects1 (p3, p1, p4, p5, closed, o))
       return s;
-    s = NEXT (s);
+    s = GET_NEXTEDGE(s);
   } while (s != NULL && s != start);
   return NULL;
 }
 
-static gboolean new_ear (GtsSegment * s, 
+static gboolean new_ear(GtsSegment * s,
 			 Ear * e, 
 			 GtsSegment * start,
 			 guint sloppy,
@@ -1303,7 +1492,11 @@ static gboolean new_ear (GtsSegment * s,
   gdouble or;
 
   e->s1 = s;
-  e->s2 = NEXT (s);
+  e->s2 = GET_NEXTEDGE(s);
+  e->s3 = NULL;
+  e->v1 = NULL;
+  e->v2 = NULL;
+  e->v3 = NULL;
 
   g_return_val_if_fail (e->s2, FALSE);
   g_return_val_if_fail (e->s2 != e->s1, FALSE);
@@ -1312,9 +1505,9 @@ static gboolean new_ear (GtsSegment * s,
   e->v3 = e->s2->v1 != e->v2 ? e->s2->v1 : e->s2->v2;
   if (e->v3 == e->v1)
     return FALSE;
-  e->s3 = NEXT (e->s2);
+  e->s3 = GET_NEXTEDGE(e->s2);
   if (gts_segment_connect (e->s3, e->v1, e->v3)) {
-    if (NEXT (e->s3) != e->s1)
+    if (GET_NEXTEDGE(e->s3) != e->s1)
       return FALSE;
   }
   else if (gts_vertices_are_connected (e->v1, e->v3))
@@ -1359,8 +1552,8 @@ static gboolean new_ear (GtsSegment * s,
 }
 
 static void triangulate_loop (GtsSegment * start,
-			      GtsSurface * surface,
-			      GtsPoint * o)
+                              GtsSurface * surface,
+                              GtsPoint * o)
 {
   GtsSegment * prev = start, * s;
   guint sloppy = 0;
@@ -1368,9 +1561,9 @@ static void triangulate_loop (GtsSegment * start,
   guint nt = 0;
 #endif /* DEBUG */
 
-  s = NEXT (start);
-  while (s != NULL && NEXT(s) != s) {//finetjul: while (NEXT (s) != s) {
-    GtsSegment * next = NEXT (s);
+  s = GET_NEXTEDGE(start);
+  while (s != NULL && GET_NEXTEDGE(s) != s) {//finetjul: while (NEXT (s) != s) {
+    GtsSegment * next = GET_NEXTEDGE(s);
     Ear e;
 
 #ifdef DEBUG
@@ -1379,9 +1572,9 @@ static void triangulate_loop (GtsSegment * start,
   
     if (!new_ear (s, &e, start, sloppy, o)) {
       if (s == start) {
-	sloppy++;
+        sloppy++;
 #ifdef DEBUG
-	fprintf (stderr, "sloppy: %u\n", sloppy);
+        fprintf (stderr, "sloppy: %u\n", sloppy);
 #endif /* DEBUG */
         // It has been tried too many times
         if (sloppy > 3)
@@ -1396,37 +1589,37 @@ static void triangulate_loop (GtsSegment * start,
       GtsFace * f;
 
       if (!GTS_IS_EDGE (e.s3))
-	e.s3 = GTS_SEGMENT (gts_edge_new (surface->edge_class, e.v1, e.v3));
+        e.s3 = GTS_SEGMENT (gts_edge_new (surface->edge_class, e.v1, e.v3));
       f = gts_face_new (surface->face_class, 
-			GTS_EDGE (e.s1), GTS_EDGE (e.s2), GTS_EDGE (e.s3));
+                        GTS_EDGE (e.s1), GTS_EDGE (e.s2), GTS_EDGE (e.s3));
       gts_surface_add_face (surface, f);
       UNSET (e.s1, RELEVANT);
       UNSET (e.s1, INTERIOR);
       UNSET (e.s2, RELEVANT);
       UNSET (e.s2, INTERIOR);
-      NEXT (prev) = e.s3;
-      NEXT (e.s3) = NEXT (e.s2);
-      NEXT (e.s1) = NEXT (e.s2) = NULL;
+      SET_NEXTEDGE(prev, e.s3);
+      SET_NEXTEDGE(e.s3, GET_NEXTEDGE(e.s2));
+      SET_NEXTEDGE(e.s2, NULL);
+      SET_NEXTEDGE(e.s1, NULL);
       start = prev;
-      s = NEXT (prev);
+      s = GET_NEXTEDGE(prev);
       sloppy = 0;
 #ifdef DEBUG
       {
-	gchar name[80];
-	FILE * fp;
-	
-	fprintf (stderr, " t.%u: (%p:%s,%p:%s,%p:%s)\n",
-		 nt, 
-		 e.v1, NAME (e.v1),
-		 e.v2, NAME (e.v2),
-		 e.v3, NAME (e.v3));
-	sprintf (name, "/tmp/t.%u", nt++);
-	fp = fopen (name, "wt");
-	//	gts_surface_write (surface, fp);
-	gts_write_triangle (GTS_TRIANGLE (f), NULL, fp);
-	//	  write_graph1 (start, interior, surface, fp);
-	fclose (fp);
-	print_loop (start, stderr);
+        gchar name[80];
+        FILE * fp;
+        fprintf (stderr, " t.%u: (%p:%s,%p:%s,%p:%s)\n",
+          nt, 
+          e.v1, NAME (e.v1),
+          e.v2, NAME (e.v2),
+          e.v3, NAME (e.v3));
+        sprintf (name, "/tmp/t.%u", nt++);
+        fp = fopen (name, "wt");
+        //	gts_surface_write (surface, fp);
+        gts_write_triangle (GTS_TRIANGLE (f), NULL, fp);
+        //	  write_graph1 (start, interior, surface, fp);
+        fclose (fp);
+        print_loop (start, stderr);
       }
 #endif /* DEBUG */
     }
@@ -1435,7 +1628,7 @@ static void triangulate_loop (GtsSegment * start,
   {
     UNSET (s, RELEVANT);
     UNSET (s, INTERIOR);
-    NEXT (s) = NULL;
+    SET_NEXTEDGE(s, NULL);
   }
 }
 
@@ -1487,27 +1680,32 @@ static void merge_duplicate (GtsEdge * e)
   gts_object_destroy (GTS_OBJECT (dup));
 }
 
-static void triangulate_boundary_interior (GSList * boundary, 
+static void triangulate_boundary_interior (GSList * boundary,
 					   GSList * interior,
 					   GtsSurface * s,
 					   GtsPoint * o)
 {
   GSList * iloops, * bloops, * i;
 
+  // Flag all segments of boundary as RELEVANT
   i = boundary;
   while (i) {
+    g_assert(!IS_EDGE_INTER(i->data));
     SET (i->data, RELEVANT);
     i = i->next;
   }
+  // Flag all intersection edges of interior as RELEVANT and INTERIOR
   i = interior;
   while (i) {
+    g_assert(IS_EDGE_INTER(i->data));
     SET (i->data, RELEVANT);
     SET (i->data, INTERIOR);
     i = i->next;
   }
 
-  iloops = interior_loops (interior);
-  bloops = boundary_loops (boundary);
+  // Unflag edges as relevant and find all loops
+  iloops = interior_loops(interior);
+  bloops = boundary_loops(boundary);
 
   i = iloops;
   while (i) {
@@ -1546,46 +1744,67 @@ static void triangulate_boundary_interior (GSList * boundary,
 #endif /* CHECK_ORIENTED */
 }
 
+/**
+ * @brief Replace the intersection points found in intersects() with
+ * sub edges.
+ */
 static void create_edges (GtsSegment * s, GtsSurface * surface)
 {
-  if (GTS_OBJECT (s)->reserved) {
-    GList * i = GTS_OBJECT (s)->reserved;
+  GList * i = GET_VERTICES(s);
+  if (i != NULL) {
     GtsVertex * v1 = i->data;
 
-    GTS_OBJECT (s)->reserved = g_list_prepend (i, 
-		      gts_edge_new (surface->edge_class, s->v1, v1));
+    GList* newList = g_list_prepend(i,
+      gts_edge_new(surface->edge_class, s->v1, v1));
+    SET_VERTICES(s, newList);
     while (i) {
       GList * next = i->next;
       GtsVertex * v2 = next ? next->data : s->v2;
 
-      GTS_OBJECT (i->data)->reserved = NULL;
+      GTS_OBJECT (i->data)->reserved = NULL; // finetjul: memory leak ?
       i->data = gts_edge_new (surface->edge_class, v1, v2);
       v1 = v2;
       i = next;
     }
   }
+  SET_SUBEDGES(s, GET_VERTICES(s));
 }
 
-static void add_boundary (GtsSegment * s, GtsSegment * next, 
+static void add_boundary(GtsEdge* e, GtsEdge* next,
 			  GSList ** boundary)
 {
-  if (GTS_OBJECT (s)->reserved == NULL)
-    *boundary = g_slist_prepend (*boundary, s);
-  else {
-    if (s->v2 == next->v2 || s->v2 == next->v1) {
-      GList * i = g_list_last (GTS_OBJECT (s)->reserved);
+  GtsSegment* s = GTS_SEGMENT(e);
 
-      while (i) {
-        *boundary = g_slist_prepend (*boundary, i->data);
-        i = i->prev;
+  g_assert(!IS_EDGE_INTER(s));
+
+  GList* subEdgesIterator = GET_SUBEDGES(s);
+  if (subEdgesIterator == NULL)
+    *boundary = g_slist_prepend(*boundary, s);
+  else {
+    if (s->v2 == GTS_SEGMENT(next)->v2 ||
+        s->v2 == GTS_SEGMENT(next)->v1) {
+      subEdgesIterator = g_list_last(subEdgesIterator);
+
+      while (subEdgesIterator) {
+        if (subEdgesIterator->data == NULL || subEdgesIterator->data == 0xdddddddddddddddd)
+        {
+          int a = 0;
+          ++a;
+        }
+        *boundary = g_slist_prepend(*boundary, subEdgesIterator->data);
+        subEdgesIterator = subEdgesIterator->prev;
       }
     }
     else {
-      GList * i = GTS_OBJECT (s)->reserved;
 
-      while (i) {
-        *boundary = g_slist_prepend (*boundary, i->data);
-        i = i->next;
+      while (subEdgesIterator) {
+        if (subEdgesIterator->data == NULL || subEdgesIterator->data == 0xdddddddddddddddd)
+        {
+          int a = 0;
+          ++a;
+        }
+        *boundary = g_slist_prepend(*boundary, subEdgesIterator->data);
+        subEdgesIterator = subEdgesIterator->next;
       }
     }
   }
@@ -1603,13 +1822,13 @@ static void triangulate_face (GtsTriangle * t, GtsSurface * surface)
   GtsPoint * p = GTS_POINT (GTS_SEGMENT (t->e1)->v1);
   GtsPoint * o;
 
-  GTS_OBJECT (t)->reserved = NULL;  
+  GTS_OBJECT(t)->reserved = NULL;
   gts_triangle_normal (t, &x, &y, &z);
   g_assert (x != 0. || y != 0. || z != 0.);
   o = gts_point_new (gts_point_class (), p->x + x, p->y + y, p->z + z);
-  add_boundary (GTS_SEGMENT (t->e3), GTS_SEGMENT (t->e1), &boundary);
-  add_boundary (GTS_SEGMENT (t->e2), GTS_SEGMENT (t->e3), &boundary);
-  add_boundary (GTS_SEGMENT (t->e1), GTS_SEGMENT (t->e2), &boundary);
+  add_boundary (t->e3, t->e1, &boundary);
+  add_boundary (t->e2, t->e3, &boundary);
+  add_boundary (t->e1, t->e2, &boundary);
 #ifdef DEBUG
   {
     static guint nt = 0;
@@ -1622,11 +1841,11 @@ if (nt == 28)
     sprintf (name, "/tmp/oc.%u", nt++);
     fp = fopen (name, "wt");
     //    write_graph (boundary, interior, s, fp);
-    write_segments (boundary, interior, fp);
+    write_segments(boundary, interior, fp);
     fclose (fp);
   }
 #endif /* DEBUG */
-  triangulate_boundary_interior (boundary, interior, s, o);
+  triangulate_boundary_interior(boundary, interior, s, o);
   g_slist_free (interior);
   g_slist_free (boundary);
   if (GTS_OBJECT (t)->klass->attributes)
@@ -1634,12 +1853,6 @@ if (nt == 28)
   gts_surface_merge (surface, s);
   gts_object_destroy (GTS_OBJECT (s));
   gts_object_destroy (GTS_OBJECT (o));
-}
-
-static void free_edge_list (GtsObject * o)
-{
-  g_list_free (o->reserved);
-  o->reserved = NULL;
 }
 
 /**
@@ -1730,7 +1943,7 @@ static void check_surface_edge (GtsEdge * e, gpointer * data)
 
 static void mark_edge (GtsObject * o, gpointer data)
 {
-  o->reserved = data;
+  SET_SURFACEINTER(GTS_SEGMENT(o), data);
 }
 
 static gint triangle_orientation (GtsTriangle * t, GtsEdge * e)
@@ -1786,9 +1999,9 @@ static void check_edge (GtsSegment * s, gpointer * data)
   while (j && *ok) {
     GtsSegment * s1 = j->data;
     
-    if (s1 != s && GTS_OBJECT (s1)->reserved == si) {
+    if (s1 != s && GET_SURFACEINTER(s1) == si) {
       if (s1->v2 != s->v1)
-	*ok = FALSE;
+        *ok = FALSE;
       nn++;
     }
     j = j->next;
@@ -1797,9 +2010,9 @@ static void check_edge (GtsSegment * s, gpointer * data)
   while (j && *ok) {
     GtsSegment * s1 = j->data;
     
-    if (s1 != s && GTS_OBJECT (s1)->reserved == si) {
+    if (s1 != s && GET_SURFACEINTER(s1) == si) {
       if (s1->v1 != s->v2)
-	*ok = FALSE;
+        *ok = FALSE;
       nn++;
     }
     j = j->next;

@@ -1488,9 +1488,9 @@ gboolean gts_edge_collapse_is_valid (GtsEdge * e)
   return TRUE;
 }
 
-#define HEAP_INSERT_EDGE(h, e) (GTS_OBJECT (e)->reserved = gts_eheap_insert (h, e))
-#define HEAP_REMOVE_EDGE(h, e) (gts_eheap_remove (h, GTS_OBJECT (e)->reserved),\
-                                GTS_OBJECT (e)->reserved = NULL)
+#define HEAP_INSERT_EDGE(h, e) (SET_HEAP(e, gts_eheap_insert (h, e)))
+#define HEAP_REMOVE_EDGE(h, e) (gts_eheap_remove (h, GET_HEAP(e)),\
+                               SET_HEAP(e, NULL))
 
 static GtsVertex * edge_collapse (GtsEdge * e,
 				  GtsEHeap * heap,
@@ -1500,7 +1500,9 @@ static GtsVertex * edge_collapse (GtsEdge * e,
 				  gdouble maxcosine2)
 {
   GSList * i;
-  GtsVertex  * v1 = GTS_SEGMENT (e)->v1, * v2 = GTS_SEGMENT (e)->v2, * mid;
+  GtsVertex * v1 = GTS_SEGMENT (e)->v1;
+  GtsVertex * v2 = GTS_SEGMENT (e)->v2;
+  GtsVertex * mid;
 
   /* if the edge is degenerate (i.e. v1 == v2), destroy and return */
   if (v1 == v2) {
@@ -1509,16 +1511,15 @@ static GtsVertex * edge_collapse (GtsEdge * e,
   }
 
   if (!gts_edge_collapse_is_valid (e)) {
-    GTS_OBJECT (e)->reserved = 
-      gts_eheap_insert_with_key (heap, e, G_MAXDOUBLE);
+    SET_HEAP(e, gts_eheap_insert_with_key (heap, e, G_MAXDOUBLE));
     return NULL;
   }
 
   mid = (*coarsen_func) (e, klass, coarsen_data);
 
   if (gts_edge_collapse_creates_fold (e, mid, maxcosine2)) {
-    GTS_OBJECT (e)->reserved = 
-      gts_eheap_insert_with_key (heap, e, G_MAXDOUBLE);
+    SET_HEAP(e,
+      gts_eheap_insert_with_key (heap, e, G_MAXDOUBLE));
     gts_object_destroy (GTS_OBJECT (mid));
     return NULL;
   }
@@ -1680,7 +1681,7 @@ void gts_surface_coarsen (GtsSurface * surface,
   gts_allow_floating_edges = FALSE;
 
   /* set reserved field of remaining edges back to NULL */
-  if (e) GTS_OBJECT (e)->reserved = NULL;
+  if (e) SET_HEAP(e, NULL);
   gts_eheap_foreach (heap, (GFunc) gts_object_reset_reserved, NULL);
 
   gts_eheap_destroy (heap);
@@ -1889,8 +1890,8 @@ static void tessellate_face (GtsFace * f,
   e2->triangles = g_slist_remove (e2->triangles, t);
   e3->triangles = g_slist_remove (e3->triangles, t);
   
-  if (GTS_OBJECT (e1)->reserved) {
-    dum = (GTS_OBJECT (e1)->reserved);
+  if (GET_BORDEREDGES (e1)) {
+    dum = GET_BORDEREDGES(e1);
     e24 = dum->data;
     e34 = dum->next->data;
     v4 = GTS_SEGMENT (e24)->v2;
@@ -1904,10 +1905,10 @@ static void tessellate_face (GtsFace * f,
     e34 = gts_edge_new (edge_class, v3, v4);
     dum = g_slist_append (NULL, e24);
     dum = g_slist_append (dum,  e34);
-    GTS_OBJECT (e1)->reserved = dum;
+    SET_BORDEREDGES(e1, dum);
   }
-  if (GTS_OBJECT (e2)->reserved) {
-    dum = (GTS_OBJECT (e2)->reserved);
+  if (GET_BORDEREDGES(e2)) {
+    dum = GET_BORDEREDGES(e2);
     e35 = dum->data;
     e15 = dum->next->data;
     v5 = GTS_SEGMENT (e35)->v2;
@@ -1921,10 +1922,10 @@ static void tessellate_face (GtsFace * f,
     e15 = gts_edge_new (edge_class, v1, v5);
     dum = g_slist_append (NULL, e35);
     dum = g_slist_append (dum,  e15);
-    GTS_OBJECT (e2)->reserved = dum;
+    SET_BORDEREDGES(e2, dum);
   }
-  if (GTS_OBJECT (e3)->reserved) {
-    dum = (GTS_OBJECT (e3)->reserved);
+  if (GET_BORDEREDGES(e3)) {
+    dum = GET_BORDEREDGES(e3);
     e16 = dum->data;
     e26 = dum->next->data;
     v6 = GTS_SEGMENT (e16)->v2;
@@ -1938,24 +1939,24 @@ static void tessellate_face (GtsFace * f,
     e26 = gts_edge_new (edge_class, v2, v6);
     dum = g_slist_append (NULL, e16);
     dum = g_slist_append (dum,  e26);
-    GTS_OBJECT (e3)->reserved = dum;
+    SET_BORDEREDGES(e3, dum);
   }
   
   if (e1->triangles == NULL) {
-    g_slist_free (GTS_OBJECT (e1)->reserved);
-    GTS_OBJECT (e1)->reserved = NULL;
+    g_slist_free(GET_BORDEREDGES(e1));
+    SET_BORDEREDGES(e1, NULL);
     gts_object_destroy (GTS_OBJECT (e1));
     e1 = NULL;
   }
   if (e2->triangles == NULL) {
-    g_slist_free (GTS_OBJECT (e2)->reserved);
-    GTS_OBJECT (e2)->reserved = NULL;
+    g_slist_free(GET_BORDEREDGES(e2));
+    SET_BORDEREDGES(e2, NULL);
     gts_object_destroy (GTS_OBJECT (e2));
     e2 = NULL;
   }
   if (e3->triangles == NULL) {
-    g_slist_free (GTS_OBJECT (e3)->reserved);
-    GTS_OBJECT (e3)->reserved = NULL;
+    g_slist_free(GET_BORDEREDGES(e3));
+    SET_BORDEREDGES(e3, NULL);
     gts_object_destroy (GTS_OBJECT (e3));
     e3 = NULL;
   }
@@ -2049,18 +2050,18 @@ static void foreach_vertex_copy (GtsPoint * p, GtsVertexClass * klass)
 
 static void foreach_edge_copy (GtsSegment * s, GtsEdgeClass * klass)
 {
-  GTS_OBJECT (s)->reserved = gts_edge_new (klass,
+  SET_COPY(GTS_EDGE(s), gts_edge_new (klass,
 					   GTS_OBJECT (s->v1)->reserved, 
-					   GTS_OBJECT (s->v2)->reserved);
+					   GTS_OBJECT (s->v2)->reserved));
 }
 
 static void foreach_face_copy (GtsTriangle * t,
 			       GtsSurface * s)
 {
   gts_surface_add_face (s, gts_face_new (s->face_class,
-					 GTS_OBJECT (t->e1)->reserved,
-					 GTS_OBJECT (t->e2)->reserved,
-					 GTS_OBJECT (t->e3)->reserved));
+                                         GET_COPY(t->e1),
+                                         GET_COPY(t->e2),
+                                         GET_COPY(t->e3)));
 }
 
 /**

@@ -21,8 +21,32 @@
 
 gboolean gts_allow_floating_edges = FALSE;
 
+void gts_edge_replace_next(GtsSegment * s, GtsSegment* with)
+{
+  GSList *i = s->v1->segments;
+  while (i)
+  {
+    if (i->data != with && GET_NEXTEDGE(i->data) == s)
+    {
+      SET_NEXTEDGE(i->data, with);
+    }
+    i = i->next;
+  }
+  i = s->v2->segments;
+  while (i)
+  {
+    if (i->data != with && GET_NEXTEDGE(i->data) == s)
+    {
+      SET_NEXTEDGE(i->data, with);
+    }
+    i = i->next;
+  }
+}
+
 static void edge_destroy (GtsObject * object)
 {
+  gts_edge_replace_next(GTS_SEGMENT(object), NULL);
+
   GtsEdge * edge = GTS_EDGE (object);
   GSList * i;
 
@@ -124,6 +148,8 @@ void gts_edge_replace (GtsEdge * e, GtsEdge * with)
   }
   g_slist_free (e->triangles);
   e->triangles = NULL;
+
+  gts_edge_replace_next(GTS_SEGMENT(e), GTS_SEGMENT(with));
 }
 
 /**

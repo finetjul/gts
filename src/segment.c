@@ -22,10 +22,12 @@
 static void segment_destroy (GtsObject * object)
 {
   GtsSegment * segment = GTS_SEGMENT (object);
+
   GtsVertex * v1 = segment->v1;
   GtsVertex * v2 = segment->v2;
 
   v1->segments = g_slist_remove (v1->segments, segment);
+  fprintf(stderr, "segment_destroy %p v1:%p\n", segment, v1->segments);
   if (!GTS_OBJECT_DESTROYED (v1) &&
       !gts_allow_floating_vertices && v1->segments == NULL)
     gts_object_destroy (GTS_OBJECT (v1));
@@ -95,6 +97,7 @@ GtsSegment * gts_segment_new (GtsSegmentClass * klass,
   s->v1 = v1;
   s->v2 = v2;
   v1->segments = g_slist_prepend (v1->segments, s);
+  fprintf(stderr, "gts_segment_new %p\n", v1->segments);
   v2->segments = g_slist_prepend (v2->segments, s);
   
   return s;
@@ -206,6 +209,7 @@ GSList * gts_segments_from_vertices (GSList * vertices)
       GtsSegment * s = j->data;
       if (g_hash_table_lookup (hash, s) == NULL) {
 	segments = g_slist_prepend (segments, s);
+  fprintf(stderr, "gts_segments_from_vertices %p", segments);
 	g_hash_table_insert (hash, s, i);
       }
       j = j->next;
