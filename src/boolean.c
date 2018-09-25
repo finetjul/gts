@@ -1123,6 +1123,10 @@ static GSList * boundary_loops (GSList * boundary)
     GSList * inext = i->next;
     GtsSegment * next = inext ? inext->data : start;
     GtsVertex * v = s->v1 == next->v1 || s->v1 == next->v2 ? s->v1 : s->v2;
+    if (!v)
+    {
+      break;
+    }
 
     if (IS_SET (v, INTERIOR)) {
       GtsSegment * intprev = prev_interior (v);
